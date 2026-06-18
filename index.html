@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Open‑Meteo Weather Downloader</title>
+  <style>
+    #om-weather-app .btn.download-active {
+      background: #22c55e !important;
+      border-color: #22c55e !important;
+      color: #fff !important;
+    }
+    /*
+      Scoped styles – all selectors prefixed with #om-weather-app
+      Safe to paste into SharePoint Script/Content Editor Web Part
+    */
+    #om-weather-app {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      color: #e5e7eb;
+      background: #0f172a;
+    }
+    #om-weather-app .card {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    }
+    #om-weather-app h1 { font-size: 20px; margin: 0 0 12px; }
+    #om-weather-app h2 { font-size: 16px; margin: 16px 0 8px; color: #cbd5e1; }
+    #om-weather-app small { color: #94a3b8; }
+    #om-weather-app .grid { display: grid; gap: 12px; }
+    #om-weather-app .grid.cols-2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    #om-weather-app .grid.cols-3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
+    #om-weather-app .grid.cols-4 { grid-template-columns: repeat(4, minmax(0,1fr)); }
+    @media (max-width: 960px){
+      #om-weather-app .grid.cols-2, #om-weather-app .grid.cols-3, #om-weather-app .grid.cols-4 { grid-template-columns: 1fr; }
+    }
+    #om-weather-app label { font-size: 12px; color: #94a3b8; display: block; margin-bottom: 4px; }
+    #om-weather-app input[type="text"],
+    #om-weather-app input[type="number"],
+    #om-weather-app input[type="date"],
+    #om-weather-app select {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid #1f2937;
+      box-sizing: border-box;
+      background: #0b1220;
+      color: #e5e7eb;
+    }
+    /* Date inputs: light background so native dark icon stays visible */
+    #om-weather-app input[type="date"]{
+      background: #e6f2ff;     /* light blue field */
+      color: #0b1220;          /* dark text for contrast */
+      border-color: #60a5fa;   /* soft blue border */
+      color-scheme: light;     /* ask browser to use light control styling */
+    }
+    #om-weather-app .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    #om-weather-app .btn {
+      appearance: none;
+      border: 1px solid #38bdf8;
+      background: #38bdf8;
+      color: #071019;
+      padding: 8px 12px;
+      border-radius: 10px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #om-weather-app .btn.secondary {
+      background: #334155;
+      color: #e2e8f0;
+      border-color: #334155;
+    }
+    #om-weather-app .btn:disabled { opacity: .6; cursor: not-allowed; }
+    #om-weather-app .muted { color: #94a3b8; }
+    #om-weather-app .pill {
+      display:inline-flex; align-items:center; gap:6px; padding:4px 8px;
+      border:1px solid #1f2937; border-radius:999px; background:#0b1220; font-size:12px; color:#e5e7eb;
+    }
+    #om-weather-app .badge {
+      display:inline-block; align-items:center; gap:6px; padding:4px 8px;
+      border-radius:999px; background:#38bdf8; color:#071019; font-size:12px;
+    }
+    #om-weather-app .results {
+      overflow:auto; max-height: 420px; border: 1px solid #1f2937; border-radius: 10px; background: #0b1220;
+    }
+    #om-weather-app table {
+      width: 100%; border-collapse: collapse; font-size: 12px; background: #0b1220;
+    }
+    #om-weather-app th, #om-weather-app td {
+      border-bottom: 1px solid #1f2937; padding: 6px 8px; text-align: left; color: #e5e7eb;
+    }
+    #om-weather-app thead th {
+      position: sticky; top: 0; background: #111827; z-index: 1; color: #cbd5e1;
+    }
+    #om-weather-app .banner {
+      background: #0b1220; border:1px solid #1f2937; padding: 10px 12px; border-radius: 10px; color: #e5e7eb;
+    }
+    #om-weather-app .city-options {
+      position: absolute; background: #0b1220; border:1px solid #1f2937; border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.08); max-height: 220px; overflow: auto; z-index: 9999;
+      color: #e5e7eb;
+    }
+    #om-weather-app .city-option { padding: 8px 10px; cursor: pointer; }
+    #om-weather-app .city-option:hover { background: #111827; }
+    #om-weather-app details {
+      border:1px dashed #1f2937; padding: 8px 10px; border-radius: 8px; background: #0b1220; color: #e5e7eb;
+    }
+    #om-weather-app summary { cursor: pointer; font-weight: 600; }
+    #om-weather-app .loader {
+      display:inline-block; width:16px; height:16px; border:2px solid #38bdf8; border-top-color:#38bdf8; border-radius:50%; animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg);} }
+  </style>
+</head>
+<body>
+<div id="om-weather-app">
+  <div class="card" style="margin-bottom:12px">
+    <h1>Open‑Meteo Weather Downloader</h1>
+    <div class="row" role="group" aria-label="Selected location">
+      <div style="position:relative; flex: 1 1 360px; min-width:280px">
+        <label for="city">City (search)</label>
+        <input id="city" type="text" placeholder="e.g. Düsseldorf" autocomplete="off" />
+        <div id="cityOptions" class="city-options" style="display:none"></div>
+      </div>
+      <div class="pill" id="chosenCityPill" style="display:none"></div>
+    </div>
+    <div class="grid cols-3" style="margin-top:12px">
+      <div>
+        <label for="timezone">Timezone</label>
+        <select id="timezone">
+          <option value="auto" selected>auto (based on coordinates)</option>
+          <option value="Europe/Berlin">Europe/Berlin</option>
+          <option value="GMT">GMT</option>
+        </select>
+      </div>
+      <div>
+        <label for="tempUnit">Temperature unit</label>
+        <select id="tempUnit">
+          <option value="celsius" selected>°C</option>
+          <option value="fahrenheit">°F</option>
+        </select>
+      </div>
+      <div>
+        <label for="windUnit">Wind speed unit</label>
+        <select id="windUnit">
+          <option value="kmh">km/h</option>
+          <option value="ms" selected>m/s</option>
+          <option value="mph">mph</option>
+          <option value="kn">knots</option>
+        </select>
+      </div>
+      <div>
+        <label for="precipUnit">Precipitation unit</label>
+        <select id="precipUnit">
+          <option value="mm" selected>mm</option>
+          <option value="inch">inch</option>
+        </select>
+      </div>
+      <div>
+        <label for="granularity">Granularity</label>
+        <select id="granularity">
+          <option value="hourly" selected>Hourly</option>
+          <option value="daily">Daily</option>
+        </select>
+      </div>
+      <div>
+        <label for="variables">Variables (hold Ctrl/⌘ to multi‑select)</label>
+        <select id="variables" multiple size="6">
+          <!-- A sensible default subset; users can change -->
+          <option value="temperature_2m" selected>temperature_2m</option>
+          <option value="relative_humidity_2m" selected>relative_humidity_2m</option>
+          <option value="precipitation" selected>precipitation</option>
+          <option value="rain">rain</option>
+          <option value="snowfall">snowfall</option>
+          <option value="cloud_cover" selected>cloud_cover</option>
+          <option value="wind_speed_10m" selected>wind_speed_10m</option>
+          <option value="wind_gusts_10m">wind_gusts_10m</option>
+          <option value="wind_direction_10m">wind_direction_10m</option>
+          <option value="pressure_msl">pressure_msl</option>
+          <option value="surface_pressure">surface_pressure</option>
+          <option value="sunshine_duration">sunshine_duration</option>
+        </select>
+        <small class="muted">Tip: for daily data, choose variables supported by &daily= (e.g., temperature_2m_max, temperature_2m_min, precipitation_sum, wind_speed_10m_max, etc.).</small>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid cols-2">
+    <div class="card">
+      <h2>Historical (Archive API)</h2>
+      <div class="grid cols-3">
+        <div>
+          <label for="histStart">Start date</label>
+          <input id="histStart" type="date" />
+        </div>
+        <div>
+          <label for="histEnd">End date</label>
+          <input id="histEnd" type="date" />
+        </div>
+        <div>
+          <label for="btnFetchHistorical">&nbsp;</label>
+          <button class="btn" id="btnFetchHistorical">Fetch historical</button>
+        </div>
+      </div>
+      <div class="row" style="margin-top:8px; gap:12px">
+        <button class="btn secondary" id="btnDownloadHistorical" disabled>Download CSV</button>
+        <span id="histStatus" class="muted"></span>
+      </div>
+      <div id="histPreview" class="results" style="margin-top:10px; display:none"></div>
+    </div>
+
+    <div class="card">
+      <h2>Forecast (Forecast API)</h2>
+      <div class="grid cols-4">
+        <div>
+          <label for="forecastDays">Forecast days (0–16)</label>
+          <input id="forecastDays" type="number" min="0" max="16" value="7" />
+        </div>
+        <div>
+          <label for="pastDays">Past days (0–92)</label>
+          <input id="pastDays" type="number" min="0" max="92" value="0" />
+        </div>
+        <div>
+          <label for="fcStart">Custom start</label>
+          <input id="fcStart" type="date" />
+        </div>
+        <div>
+          <label for="fcEnd">Custom end</label>
+          <input id="fcEnd" type="date" />
+        </div>
+      </div>
+      <div class="row" style="margin-top:8px; gap:12px">
+        <button class="btn" id="btnFetchForecast">Fetch forecast</button>
+        <button class="btn secondary" id="btnDownloadForecast" disabled>Download CSV</button>
+        <span id="fcStatus" class="muted"></span>
+      </div>
+      <div id="fcPreview" class="results" style="margin-top:10px; display:none"></div>
+    </div>
+  </div>
+
+  <div style="margin-top:12px" class="banner">
+    <details>
+      <summary>Notes & help</summary>
+      <div style="margin-top:8px">
+        <ul>
+          <li>Historical data: 1940 → near‑present, with a few‑day delay depending on dataset. For the very latest days, use Forecast API with <code>past_days</code>.</li>
+          <li>Inputs accept ISO dates (YYYY‑MM‑DD). For hourly data, times start at <code>00:00</code> local time if <em>timezone</em> is set.</li>
+          <li>You can switch between <strong>hourly</strong> and <strong>daily</strong> outputs via the <em>Granularity</em> selector. Make sure your variable names match the selected granularity.</li>
+          <li>This tool uses the Open‑Meteo <em>Geocoding API</em> to resolve city names to coordinates and timezone.</li>
+        </ul>
+      </div>
+    </details>
+  </div>
+</div>
+
+<script>
+(function(){
+  const els = {
+    city: document.getElementById('city'),
+    cityOptions: document.getElementById('cityOptions'),
+    chosenCityPill: document.getElementById('chosenCityPill'),
+    timezone: document.getElementById('timezone'),
+    tempUnit: document.getElementById('tempUnit'),
+    windUnit: document.getElementById('windUnit'),
+    precipUnit: document.getElementById('precipUnit'),
+    granularity: document.getElementById('granularity'),
+    variables: document.getElementById('variables'),
+    // historical
+    histStart: document.getElementById('histStart'),
+    histEnd: document.getElementById('histEnd'),
+    btnFetchHistorical: document.getElementById('btnFetchHistorical'),
+    btnDownloadHistorical: document.getElementById('btnDownloadHistorical'),
+    histStatus: document.getElementById('histStatus'),
+    histPreview: document.getElementById('histPreview'),
+    // forecast
+    forecastDays: document.getElementById('forecastDays'),
+    pastDays: document.getElementById('pastDays'),
+    fcStart: document.getElementById('fcStart'),
+    fcEnd: document.getElementById('fcEnd'),
+    btnFetchForecast: document.getElementById('btnFetchForecast'),
+    btnDownloadForecast: document.getElementById('btnDownloadForecast'),
+    fcStatus: document.getElementById('fcStatus'),
+    fcPreview: document.getElementById('fcPreview')
+  };
+
+  let state = {
+    location: null, // {name, latitude, longitude, timezone}
+    lastHistorical: null, // raw json
+    lastForecast: null // raw json
+  };
+
+  // -------- Utilities --------
+  const fmt = (x)=> x==null ? '' : String(x);
+  const escCSV = (s)=> {
+    const str = s==null ? '' : String(s);
+    return /[",\n]/.test(str) ? '"' + str.replace(/"/g,'""') + '"' : str;
+  };
+  function buildCSVFromSeries(seriesObj, vars, timeField){
+    if(!seriesObj || !seriesObj[timeField]) return '';
+    const time = seriesObj[timeField];
+    const headers = [timeField].concat(vars);
+    const unitsObj = (timeField === 'time' && seriesObj.units) ? seriesObj.units : null;
+    // The Open‑Meteo JSON has sibling objects for units (hourly_units/daily_units)
+    const unitRow = headers.map(h => {
+      if(h === timeField) return 'ISO8601';
+      return unitsObj && unitsObj[h] ? unitsObj[h] : '';
+    });
+    let csv = headers.join(',') + '\n' + unitRow.map(escCSV).join(',') + '\n';
+    for(let i=0;i<time.length;i++){
+      const row = [time[i]];
+      for(const v of vars){
+        const arr = seriesObj[v];
+        row.push(arr ? arr[i] : '');
+      }
+      csv += row.map(escCSV).join(',') + '\n';
+    }
+    return csv;
+  }
+  function triggerDownload(filename, text){
+    const blob = new Blob([text], {type: 'text/csv;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.style.display='none';
+    document.body.appendChild(a); a.click(); URL.revokeObjectURL(url); a.remove();
+  }
+  function qs(obj){
+    const params = [];
+    for(const [k,v] of Object.entries(obj)){
+      if(v === undefined || v === null || v === '') continue;
+      if(Array.isArray(v)){
+        if(v.length) params.push(`${encodeURIComponent(k)}=${encodeURIComponent(v.join(','))}`);
+      } else {
+        params.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
+      }
+    }
+    return params.join('&');
+  }
+  function ensureVarsForGranularity(vars, gran){
+    if(gran === 'daily'){
+      // If user accidentally picked hourly names, map a few common ones.
+      const mapped = vars.map(v => ({
+        temperature_2m: 'temperature_2m_mean',
+        relative_humidity_2m: 'relative_humidity_2m_mean',
+        precipitation: 'precipitation_sum',
+        rain: 'rain_sum',
+        snowfall: 'snowfall_sum',
+        cloud_cover: 'cloud_cover_mean',
+        wind_speed_10m: 'wind_speed_10m_mean',
+        wind_gusts_10m: 'wind_gusts_10m_max',
+        wind_direction_10m: 'wind_direction_10m_dominant',
+        pressure_msl: 'pressure_msl_mean',
+        surface_pressure: 'surface_pressure_mean',
+        sunshine_duration: 'sunshine_duration'
+      }[v] || v));
+      return Array.from(new Set(mapped));
+    }
+    return vars;
+  }
+  function previewTable(container, seriesObj, vars, timeField){
+    container.innerHTML = '';
+    if(!seriesObj || !seriesObj[timeField]){ container.style.display='none'; return; }
+    const time = seriesObj[timeField];
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const trh = document.createElement('tr');
+    const headers = [timeField].concat(vars);
+    for(const h of headers){ const th = document.createElement('th'); th.textContent = h; trh.appendChild(th); }
+    thead.appendChild(trh);
+    table.appendChild(thead);
+    const tbody = document.createElement('tbody');
+    const rowsToShow = Math.min(50, time.length);
+    for(let i=0;i<rowsToShow;i++){
+      const tr = document.createElement('tr');
+      const cells = [time[i]].concat(vars.map(v => (seriesObj[v]||[])[i]));
+      for(const c of cells){ const td = document.createElement('td'); td.textContent = fmt(c); tr.appendChild(td);}    
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    container.appendChild(table);
+    container.style.display = 'block';
+  }
+
+  // -------- Geocoding --------
+  async function searchCity(q){
+    const url = `https://geocoding-api.open-meteo.com/v1/search?` + qs({ name: q, count: 8, language: 'en' });
+    const r = await fetch(url);
+    if(!r.ok) throw new Error('Geocoding failed');
+    const data = await r.json();
+    return (data && data.results) ? data.results : [];
+  }
+  function setChosenCity(item){
+    state.location = {
+      name: `${item.name}, ${item.country}` + (item.admin1 ? ` (${item.admin1})` : ''),
+      latitude: item.latitude,
+      longitude: item.longitude,
+      timezone: item.timezone || 'auto'
+    };
+    els.chosenCityPill.innerHTML = `<strong>City:</strong> ${state.location.name} <span class="muted">[${state.location.latitude.toFixed(3)}, ${state.location.longitude.toFixed(3)}]</span>`;
+    els.chosenCityPill.style.display = 'inline-flex';
+    els.cityOptions.style.display = 'none';
+  }
+
+  // Autocomplete UI
+  let cityDebounce = 0;
+  els.city.addEventListener('input', () => {
+    const q = els.city.value.trim();
+    clearTimeout(cityDebounce);
+    if(q.length < 2){ els.cityOptions.style.display='none'; return; }
+    cityDebounce = setTimeout(async () => {
+      try{
+        const results = await searchCity(q);
+        const box = els.cityOptions; box.innerHTML = '';
+        if(!results.length){ box.style.display='none'; return; }
+        for(const item of results){
+          const div = document.createElement('div');
+          div.className = 'city-option';
+          const parts = [item.name, item.admin1, item.country].filter(Boolean).join(', ');
+          div.textContent = `${parts}`;
+          div.addEventListener('click', () => setChosenCity(item));
+          box.appendChild(div);
+        }
+        const rect = els.city.getBoundingClientRect();
+        box.style.minWidth = rect.width + 'px';
+        box.style.display='block';
+      } catch(e){ console.warn(e); }
+    }, 250);
+  });
+
+  // Close city options on outside click or Escape
+  function hideCityOptions(){ els.cityOptions.style.display = 'none'; }
+
+  document.addEventListener('click', (e) => {
+    const t = e.target;
+    const clickedInput = t === els.city;
+    const clickedOptions = els.cityOptions.contains(t);
+    if(!clickedInput && !clickedOptions){ hideCityOptions(); }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if(e.key === 'Escape') hideCityOptions();
+  });
+
+
+  // -------- Build URLs --------
+  function getCommonParams(){
+    const tz = els.timezone.value || 'auto';
+    const temp = els.tempUnit.value || 'celsius';
+    const wind = els.windUnit.value || 'kmh';
+    const precip = els.precipUnit.value || 'mm';
+    const gran = els.granularity.value || 'hourly';
+    const vars = Array.from(els.variables.selectedOptions).map(o=>o.value);
+    const variables = ensureVarsForGranularity(vars, gran);
+    return { tz, temp, wind, precip, gran, variables };
+  }
+  function ensureLocation(){
+    if(!state.location) throw new Error('Pick a city first');
+    return state.location;
+  }
+
+  // -------- Fetch Historical --------
+  els.btnFetchHistorical.addEventListener('click', async () => {
+    els.btnFetchHistorical.disabled = true; els.histStatus.innerHTML = '<span class="loader"></span> Fetching…';
+    els.btnDownloadHistorical.disabled = true; els.histPreview.style.display='none';
+    try{
+      const loc = ensureLocation();
+      const { tz, temp, wind, precip, gran, variables } = getCommonParams();
+      const start = els.histStart.value; const end = els.histEnd.value;
+      if(!start || !end) throw new Error('Please select start and end dates');
+      if(end < start) throw new Error('End date must be on/after start date');
+      const base = 'https://archive-api.open-meteo.com/v1/archive';
+      const params = {
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        start_date: start,
+        end_date: end,
+        timezone: tz,
+        temperature_unit: temp,
+        wind_speed_unit: wind,
+        precipitation_unit: precip
+      };
+      if(gran === 'daily') params.daily = variables; else params.hourly = variables;
+      const url = base + '?' + qs(params);
+      const r = await fetch(url);
+      if(!r.ok) throw new Error('Historical API error');
+      const data = await r.json();
+      // Attach units in seriesObj wrapper for CSV convenience
+      const series = gran === 'daily' ? {
+        time: (data.daily && data.daily.time) || [],
+        units: data.daily_units || {},
+        ...data.daily
+      } : {
+        time: (data.hourly && data.hourly.time) || [],
+        units: data.hourly_units || {},
+        ...data.hourly
+      };
+      state.lastHistorical = { raw: data, series, gran, variables, loc, start, end };
+      previewTable(els.histPreview, series, variables, 'time');
+      els.btnDownloadHistorical.disabled = series.time.length === 0;
+      if(series.time.length > 0){
+        els.btnDownloadHistorical.classList.add('download-active');
+      }else{
+        els.btnDownloadHistorical.classList.remove('download-active');
+      }
+      els.histStatus.innerHTML = `${series.time.length} rows ready`;
+    } catch(e){
+      console.error(e); els.histStatus.textContent = 'Error: ' + e.message;
+      alert(e.message);
+    } finally {
+      els.btnFetchHistorical.disabled = false;
+    }
+  });
+
+  els.btnDownloadHistorical.addEventListener('click', () => {
+    const ctx = state.lastHistorical; if(!ctx) return;
+    const csv = buildCSVFromSeries(ctx.series, ctx.variables, 'time');
+    const name = `${(ctx.loc.name||'location').replace(/[^\w\-]+/g,'_')}_historical_${ctx.gran}_${ctx.start}_${ctx.end}.csv`;
+    triggerDownload(name, csv);
+  });
+
+  // -------- Fetch Forecast --------
+  els.btnFetchForecast.addEventListener('click', async () => {
+    els.btnFetchForecast.disabled = true; els.fcStatus.innerHTML = '<span class="loader"></span> Fetching…';
+    els.btnDownloadForecast.disabled = true; els.fcPreview.style.display='none';
+    try{
+      const loc = ensureLocation();
+      const { tz, temp, wind, precip, gran, variables } = getCommonParams();
+      const base = 'https://api.open-meteo.com/v1/forecast';
+      const params = {
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        timezone: tz,
+        temperature_unit: temp,
+        wind_speed_unit: wind,
+        precipitation_unit: precip
+      };
+      if(gran === 'daily') params.daily = variables; else params.hourly = variables;
+      const fd = parseInt(els.forecastDays.value, 10) || 0;
+      const pd = parseInt(els.pastDays.value, 10) || 0;
+      const s = els.fcStart.value; const e = els.fcEnd.value;
+      if(s && e){
+        if(e < s) throw new Error('Forecast: End date must be on/after start date');
+        params.start_date = s; params.end_date = e;
+      } else {
+        params.forecast_days = Math.max(0, Math.min(16, fd));
+        if(pd>0) params.past_days = Math.max(0, Math.min(92, pd));
+      }
+      const url = base + '?' + qs(params);
+      const r = await fetch(url);
+      if(!r.ok) throw new Error('Forecast API error');
+      const data = await r.json();
+      const series = gran === 'daily' ? {
+        time: (data.daily && data.daily.time) || [],
+        units: data.daily_units || {},
+        ...data.daily
+      } : {
+        time: (data.hourly && data.hourly.time) || [],
+        units: data.hourly_units || {},
+        ...data.hourly
+      };
+      state.lastForecast = { raw: data, series, gran, variables, loc, s, e, fd: params.forecast_days||0, pd: params.past_days||0 };
+      previewTable(els.fcPreview, series, variables, 'time');
+      els.btnDownloadForecast.disabled = series.time.length === 0;
+      if(series.time.length > 0){
+        els.btnDownloadForecast.classList.add('download-active');
+      }else{
+        els.btnDownloadForecast.classList.remove('download-active');
+      }
+      els.fcStatus.innerHTML = `${series.time.length} rows ready`;
+    } catch(e){
+      console.error(e); els.fcStatus.textContent = 'Error: ' + e.message;
+      alert(e.message);
+    } finally { els.btnFetchForecast.disabled = false; }
+  });
+
+  els.btnDownloadForecast.addEventListener('click', () => {
+    const ctx = state.lastForecast; if(!ctx) return;
+    const csv = buildCSVFromSeries(ctx.series, ctx.variables, 'time');
+    const range = ctx.s && ctx.e ? `${ctx.s}_${ctx.e}` : `f${ctx.fd}_p${ctx.pd}`;
+    const name = `${(ctx.loc.name||'location').replace(/[^\w\-]+/g,'_')}_forecast_${ctx.gran}_${range}.csv`;
+    triggerDownload(name, csv);
+  });
+
+  // Set helpful defaults
+  try{
+    // Default historical to last full month
+    const today = new Date();
+    const firstOfThisMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+    const lastMonthEnd = new Date(firstOfThisMonth.getTime() - 24*3600*1000);
+    const lastMonthStart = new Date(Date.UTC(lastMonthEnd.getUTCFullYear(), lastMonthEnd.getUTCMonth(), 1));
+    const f = (d)=> d.toISOString().slice(0,10);
+    els.histStart.value = f(lastMonthStart);
+    els.histEnd.value = f(lastMonthEnd);
+  }catch{}
+})();
+</script>
+</body>
+</html>
